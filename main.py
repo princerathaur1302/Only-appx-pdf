@@ -154,7 +154,20 @@ async def handle_txt(client, message):
 
     except Exception as e:
         await processing.edit(f"❌ Error\n{str(e)}")
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
+class KeepAliveHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_keepalive():
+    server = HTTPServer(('0.0.0.0', 10000), KeepAliveHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_keepalive).start()
 
 print("🔥 Clean PDF Bot Started")
 app.run()
