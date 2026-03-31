@@ -2,6 +2,7 @@ from pyrogram import Client, filters
 import requests
 import os
 import time
+import re
 from urllib.parse import quote
 
 API_ID = 20214595
@@ -9,45 +10,27 @@ API_HASH = "4763f66ce1a18c2dd491a5048891926c"
 BOT_TOKEN = "8609058610:AAHaLZFKchOHOny6xGHQSBz7ZdOv0011pd8"
 CREDIT = "@contact_262524_bot"
 
+
 PDF_API = "https://studyuk.site/rwaapi/pdfdl.php?url="
 
 app = Client(
-    "pdf_only_batch_bot",
+    "clean_pdf_bot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN
 )
 
-message_tracker = {}
-
-
-# ================= MESSAGE TRACK =================
-async def track_message(msg):
-    chat_id = msg.chat.id
-    message_tracker.setdefault(chat_id, []).append(msg.id)
-
-
-async def delete_tracked_messages(client, chat_id):
-    if chat_id in message_tracker:
-        for msg_id in message_tracker[chat_id]:
-            try:
-                await client.delete_messages(chat_id, msg_id)
-            except:
-                pass
-        message_tracker[chat_id] = []
-
-
-# ================= DOWNLOAD PDF =================
-async def download_pdf(url, dest_path, msg):
+# ================= DOWNLOAD =================
+async def download_pdf(url, file_name, msg):
     r = requests.get(url, stream=True, timeout=60)
     r.raise_for_status()
 
     total = int(r.headers.get("content-length", 0))
     downloaded = 0
-    start_time = time.time()
-    last_update = 0
+    start = time.time()
+    last = 0
 
-    with open(dest_path, "wb") as f:
+    with open(file_name, "wb") as f:
         for chunk in r.iter_content(1024 * 512):
             if not chunk:
                 continue
@@ -56,74 +39,61 @@ async def download_pdf(url, dest_path, msg):
             downloaded += len(chunk)
 
             now = time.time()
-            if now - last_update >= 3:
+            if now - last >= 3:
                 percent = (downloaded / total * 100) if total else 0
-                speed = downloaded / max(now - start_time, 1) / (1024 * 1024)
+                speed = downloaded / max(now - start, 1) / (1024 * 1024)
 
                 try:
                     await msg.edit(
-                        f"📥 Downloading PDF...\n"
-                        f"├ Progress: {percent:.2f}%\n"
-                        f"├ Speed: {speed:.2f} MB/s\n"
-                        f"└ {downloaded // (1024*1024)} MB"
+                        f"📥 Downloading...\n"
+                        f"{percent:.2f}% | {speed:.2f} MB/s"
                     )
                 except:
                     pass
-                last_update = now
+                last = now
 
 
-# ================= UPLOAD PDF =================
-async def upload_pdf(client, chat_id, file_path, caption):
-    upload_msg = await client.send_message(chat_id, "📤 Uploading PDF...")
-    await track_message(upload_msg)
+# ================= UPLOAD =================
+async def upload_pdf(client, chat_id, file_name, caption):
+    msg = await client.send_message(chat_id, "📤 Uploading...")
 
     async def progress(current, total):
         percent = current * 100 / total
         try:
-            await upload_msg.edit_text(f"📤 Uploading... {percent:.2f}%")
+            await msg.edit(f"📤 Uploading {percent:.2f}%")
         except:
             pass
 
     await client.send_document(
         chat_id,
-        file_path,
+        file_name,
         caption=caption,
         progress=progress
     )
 
     try:
-        await upload_msg.delete()
+        await msg.delete()
     except:
         pass
 
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    if os.path.exists(file_name):
+        os.remove(file_name)
 
 
-# ================= COMMANDS =================
+# ================= COMMAND =================
 @app.on_message(filters.command("start"))
 async def start(client, message):
-    msg = await message.reply("👋 Use /batch and send TXT file")
-    await track_message(msg)
-
-
-@app.on_message(filters.command("batch"))
-async def batch(client, message):
-    msg = await message.reply("📄 Send TXT file now")
-    await track_message(msg)
+    await message.reply("👋 Send TXT file with links")
 
 
 # ================= TXT HANDLER =================
 @app.on_message(filters.document & filters.private)
 async def handle_txt(client, message):
+
     if not message.document.file_name.endswith(".txt"):
         return
 
-    chat_id = message.chat.id
-    batch_name = os.path.splitext(message.document.file_name)[0]
-
-    processing = await message.reply("📥 Processing TXT...")
-    await track_message(processing)
+    processing = await message.reply("📥 Processing...")
 
     txt_path = await message.download()
 
@@ -139,43 +109,40 @@ async def handle_txt(client, message):
 
             title, url = line.split(":https://", 1)
             title = title.strip()
+
+            # ✅ REMOVE (Course Name)
+            title = re.sub(r'^\(.*?\)\s*', '', title)
+
             url = "https://" + url.strip()
 
-            # ================= SKIP VIDEOS =================
+            # ❌ SKIP VIDEOS
             if "transcoded" in url.lower() or ".m3u8" in url.lower():
                 print(f"⏭ Skipped video: {title}")
                 continue
 
-            # ================= PDF LOGIC =================
+            # ✅ PDF LOGIC
             if ".pdf" in url.lower():
-
-                # Protected Appx PDF
                 if "URLPrefix" in url:
                     final_url = PDF_API + quote(url, safe="")
                 else:
                     final_url = url
             else:
-                # Static hidden PDF
                 final_url = PDF_API + quote(url, safe="")
 
-            pdf_name = f"{title.replace('/', '_').replace(' ', '_')}.pdf"
+            # ✅ CLEAN FILE NAME
+            file_name = re.sub(r'[\\/:*?"<>|]', '_', title) + ".pdf"
 
-            msg = await message.reply(f"📄 Downloading: {title}")
-            await track_message(msg)
+            msg = await message.reply(f"📄 {title}")
 
             try:
-                await download_pdf(final_url, pdf_name, msg)
+                await download_pdf(final_url, file_name, msg)
 
-                caption = (
-                    f"📄 **Title:** {title}\n"
-                    f"📦 **Batch:** {batch_name}\n\n"
-                    f"**Contact ➤** {CREDIT}"
-                )
+                caption = f"📄 {title}"
 
-                await upload_pdf(client, chat_id, pdf_name, caption)
+                await upload_pdf(client, message.chat.id, file_name, caption)
 
             except Exception as e:
-                await msg.edit(f"❌ Failed: {title}\n{str(e)}")
+                await msg.edit(f"❌ Failed\n{str(e)}")
 
         try:
             await processing.delete()
@@ -186,8 +153,8 @@ async def handle_txt(client, message):
             os.remove(txt_path)
 
     except Exception as e:
-        await processing.edit(f"❌ Error: {str(e)}")
+        await processing.edit(f"❌ Error\n{str(e)}")
 
 
-print("🔥 PDF BOT STARTED")
+print("🔥 Clean PDF Bot Started")
 app.run()
