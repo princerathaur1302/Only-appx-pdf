@@ -5,8 +5,8 @@ import time
 from urllib.parse import quote
 
 API_ID = 20214595
-API_HASH = "YOUR_API_HASH"
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+API_HASH = "4763f66ce1a18c2dd491a5048891926c"
+BOT_TOKEN = "8609058610:AAHaLZFKchOHOny6xGHQSBz7ZdOv0011pd8"
 CREDIT = "@contact_262524_bot"
 
 PDF_API = "https://studyuk.site/rwaapi/pdfdl.php?url="
